@@ -8,7 +8,7 @@ import torch.utils.model_zoo as model_zoo
 from utils.helpers import initialize_weights
 from itertools import chain
 
-''' 
+'''
 -> ResNet BackBone
 '''
 
@@ -26,7 +26,7 @@ class ResNet(nn.Module):
             initialize_weights(self.layer0)
         else:
             self.layer0 = nn.Sequential(*list(model.children())[:4])
-        
+
         self.layer1 = model.layer1
         self.layer2 = model.layer2
         self.layer3 = model.layer3
@@ -34,8 +34,8 @@ class ResNet(nn.Module):
 
         if output_stride == 16: s3, s4, d3, d4 = (2, 1, 1, 2)
         elif output_stride == 8: s3, s4, d3, d4 = (1, 1, 2, 4)
-        
-        if output_stride == 8: 
+
+        if output_stride == 8:
             for n, m in self.layer3.named_modules():
                 if 'conv1' in n and (backbone == 'resnet34' or backbone == 'resnet18'):
                     m.dilation, m.padding, m.stride = (d3,d3), (d3,d3), (s3,s3)
@@ -62,19 +62,19 @@ class ResNet(nn.Module):
 
         return x, low_level_features
 
-''' 
+'''
 -> (Aligned) Xception BackBone
 Pretrained model from https://github.com/Cadene/pretrained-models.pytorch
 by Remi Cadene
-''' 
+'''
 class SeparableConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, dilation=1, bias=False, BatchNorm=nn.BatchNorm2d):
         super(SeparableConv2d, self).__init__()
-        
+
         if dilation > kernel_size//2: padding = dilation
         else: padding = kernel_size//2
 
-        self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size, stride, padding=padding, 
+        self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size, stride, padding=padding,
                                     dilation=dilation, groups=in_channels, bias=bias)
         self.bn = nn.BatchNorm2d(in_channels)
         self.pointwise = nn.Conv2d(in_channels, out_channels, 1, 1, bias=bias)
@@ -94,9 +94,9 @@ class Block(nn.Module):
             self.skip = nn.Conv2d(in_channels, out_channels, 1, stride=stride, bias=False)
             self.skipbn = nn.BatchNorm2d(out_channels)
         else: self.skip = None
-        
+
         rep = []
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
         rep.append(self.relu)
         rep.append(SeparableConv2d(in_channels, out_channels, 3, stride=1, dilation=dilation))
@@ -116,7 +116,7 @@ class Block(nn.Module):
                 self.relu,
                 SeparableConv2d(in_channels, in_channels, 3, 1, dilation),
                 nn.BatchNorm2d(in_channels)]
-        
+
         if not use_1st_relu: rep = rep[1:]
         self.rep = nn.Sequential(*rep)
 
@@ -138,15 +138,15 @@ class Xception(nn.Module):
         # Stride for block 3 (entry flow), and the dilation rates for middle flow and exit flow
         if output_stride == 16: b3_s, mf_d, ef_d = 2, 1, (1, 2)
         if output_stride == 8: b3_s, mf_d, ef_d = 1, 2, (2, 4)
-        
+
         # Entry Flow
         self.conv1 = nn.Conv2d(in_channels, 32, 3, 2, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(32)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
         self.conv2 = nn.Conv2d(32, 64, 3, 1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(64)
 
-        self.block1 = Block(64, 128, stride=2, dilation=1, use_1st_relu=False)
+        self.block1 = Block(64, 128, stride=2, dilation=1, use_1st_relu=True)
         self.block2 = Block(128, 256, stride=2, dilation=1)
         self.block3 = Block(256, 728, stride=b3_s, dilation=1)
 
@@ -194,7 +194,7 @@ class Xception(nn.Module):
                     model_dict[k.replace('bn4', 'bn5')] = v
                 else:
                     model_dict[k] = v
-        
+
         state_dict.update(model_dict)
         self.load_state_dict(state_dict)
 
@@ -246,7 +246,7 @@ class Xception(nn.Module):
 
         return x, low_level_features
 
-''' 
+'''
 -> The Atrous Spatial Pyramid Pooling
 '''
 
@@ -255,7 +255,7 @@ def assp_branch(in_channels, out_channles, kernel_size, dilation):
     return nn.Sequential(
             nn.Conv2d(in_channels, out_channles, kernel_size, padding=padding, dilation=dilation, bias=False),
             nn.BatchNorm2d(out_channles),
-            nn.ReLU(inplace=True))
+            nn.ReLU(inplace=False))
 
 class ASSP(nn.Module):
     def __init__(self, in_channels, output_stride):
@@ -264,7 +264,7 @@ class ASSP(nn.Module):
         assert output_stride in [8, 16], 'Only output strides of 8 or 16 are suported'
         if output_stride == 16: dilations = [1, 6, 12, 18]
         elif output_stride == 8: dilations = [1, 12, 24, 36]
-        
+
         self.aspp1 = assp_branch(in_channels, 256, 1, dilation=dilations[0])
         self.aspp2 = assp_branch(in_channels, 256, 3, dilation=dilations[1])
         self.aspp3 = assp_branch(in_channels, 256, 3, dilation=dilations[2])
@@ -274,11 +274,11 @@ class ASSP(nn.Module):
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Conv2d(in_channels, 256, 1, bias=False),
             nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True))
-        
+            nn.ReLU(inplace=False))
+
         self.conv1 = nn.Conv2d(256*5, 256, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(256)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
         self.dropout = nn.Dropout(0.5)
 
         initialize_weights(self)
@@ -296,7 +296,7 @@ class ASSP(nn.Module):
 
         return x
 
-''' 
+'''
 -> Decoder
 '''
 
@@ -305,16 +305,16 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.conv1 = nn.Conv2d(low_level_channels, 48, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(48)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
         # Table 2, best performance with two 3x3 convs
         self.output = nn.Sequential(
             nn.Conv2d(48+256, 256, 3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Conv2d(256, 256, 3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Dropout(0.1),
             nn.Conv2d(256, num_classes, 1, stride=1),
         )
@@ -334,9 +334,9 @@ class Decoder(nn.Module):
 '''
 
 class DeepLab(BaseModel):
-    def __init__(self, num_classes, in_channels=3, backbone='xception', pretrained=True, 
+    def __init__(self, num_classes, in_channels=3, backbone='xception', pretrained=True,
                 output_stride=16, freeze_bn=False, freeze_backbone=False, **_):
-                
+
         super(DeepLab, self).__init__()
         assert ('xception' or 'resnet' in backbone)
         if 'resnet' in backbone:
@@ -350,7 +350,7 @@ class DeepLab(BaseModel):
         self.decoder = Decoder(low_level_channels, num_classes)
 
         if freeze_bn: self.freeze_bn()
-        if freeze_backbone: 
+        if freeze_backbone:
             set_trainable([self.backbone], False)
 
     def forward(self, x):
