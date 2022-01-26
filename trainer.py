@@ -47,6 +47,7 @@ class Trainer(BaseTrainer):
         self._reset_metrics()
         tbar = tqdm(self.train_loader, ncols=130)
         for batch_idx, (data, target) in enumerate(tbar):
+            #target = torch.argmax(target, dim=1) #for target dimension error
             self.data_time.update(time.time() - tic)
             #data, target = data.to(self.device), target.to(self.device)
 
@@ -61,7 +62,8 @@ class Trainer(BaseTrainer):
                 loss += self.loss(output[1], target) * 0.4
                 output = output[0]
             else:
-                assert output.size()[2:] == target.size()[1:]
+                print('\n', output.size(), target.size(), self.num_classes)
+                assert output.size()[2:] == target.size()[1:] #dimension error -> train.py _ target.convert('L')
                 assert output.size()[1] == self.num_classes
                 loss = self.loss(output, target)
 

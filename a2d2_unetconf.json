@@ -13,9 +13,9 @@
     },
 
     "train_loader": {
-        "type": "CityScapes",
+        "type": "A2D2",
         "args":{
-            "data_dir": "data",
+            "data_dir": "data/a2d2",
             "batch_size": 1,
             "base_size": 400,
             "crop_size": 380,
@@ -31,9 +31,9 @@
     },
 
     "val_loader": {
-        "type": "CityScapes",
+        "type": "A2D2",
         "args":{
-            "data_dir": "data",
+            "data_dir": "data/a2d2",
             "batch_size": 1,
             "crop_size": 480,
             "val": true,
